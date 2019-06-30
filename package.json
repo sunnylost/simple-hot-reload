@@ -1,0 +1,33 @@
+{
+    "name": "simple-hot-reload",
+    "version": "0.1.0",
+    "private": true,
+    "bin": "bin/cli.js",
+    "scripts": {
+        "dev": "rollup -w -c rollup.config.js"
+    },
+    "dependencies": {
+        "chokidar": "^3.0.1",
+        "open": "^6.4.0",
+        "ws": "^7.0.1"
+    },
+    "devDependencies": {
+        "babel-eslint": "^10.0.2",
+        "eslint": "^6.0.1",
+        "eslint-config-prettier": "^6.0.0",
+        "eslint-friendly-formatter": "^4.0.1",
+        "eslint-plugin-prettier": "^3.1.0",
+        "husky": "^2.7.0",
+        "lint-staged": "^8.1.7",
+        "prettier": "^1.17.1",
+        "yargs": "^13.2.4"
+    },
+    "lint-staged": {
+        "*.js": ["eslint --fix --ignore-path .eslintignore", "git add"]
+    },
+    "husky": {
+        "hooks": {
+            "pre-commit": "lint-staged"
+        }
+    }
+}
