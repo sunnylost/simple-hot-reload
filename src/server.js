@@ -7,8 +7,6 @@ const chokidar = require('chokidar')
 
 let wss
 let sender
-let port = 8080
-let failedTimes = 10
 let indexFilePath
 let clientName = `client.${+new Date()}.js`
 
@@ -22,7 +20,32 @@ function watchChange(dir) {
     })
 }
 
-module.exports = function init(filePath) {
+function getAvailablePort(callback, port = 8080, failedTimes = 10) {
+    let tmpServer = new http.createServer()
+
+    tmpServer.on('error', err => {
+        if (err && err.code === 'EADDRINUSE') {
+            if (failedTimes) {
+                process.nextTick(() => {
+                    tmpServer = null
+                    getAvailablePort(callback, port + 1, failedTimes - 1)
+                })
+            }
+        }
+    })
+
+    tmpServer.on('listening', () => {
+        tmpServer.close()
+    })
+
+    tmpServer.on('close', () => {
+        callback(port)
+    })
+
+    tmpServer.listen(port)
+}
+
+function init(port, filePath) {
     indexFilePath = filePath
 
     let dir = path.dirname(filePath)
@@ -61,31 +84,22 @@ module.exports = function init(filePath) {
 
     server.on('listening', () => {
         watchChange(dir, filename)
-        wss = new WebSocket.Server({
-            port: port + 1
-        })
 
-        wss.on('connection', ws => {
-            sender = ws
-            /*ws.on('message', message => {
-                console.log('received: %s', message)
-            })*/
-        })
-        // open(`http://localhost:${port}/${filename}`)
+        getAvailablePort(port => {
+            wss = new WebSocket.Server({
+                port
+            })
+
+            wss.on('connection', ws => {
+                sender = ws
+            })
+        }, port + 1)
+
+        open(`http://localhost:${port}/${filename}`)
     })
 
     server.on('error', err => {
-        if (err && err.code === 'EADDRINUSE') {
-            port++
-            failedTimes--
-
-            if (failedTimes) {
-                process.nextTick(() => {
-                    server = null
-                    init(filePath)
-                })
-            }
-        }
+        console.log(err)
     })
 
     server.on('close', () => {
@@ -93,4 +107,10 @@ module.exports = function init(filePath) {
     })
 
     server.listen(port)
+}
+
+module.exports = function(filePath) {
+    getAvailablePort(port => {
+        init(port, filePath)
+    })
 }
