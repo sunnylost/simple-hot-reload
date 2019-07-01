@@ -1,37 +1,51 @@
-const { resolve } = require('path')
+const { resolve, relative } = require('path')
 const fs = require('fs')
+const chalk = require('chalk')
 const argv = require('yargs').argv
 const Server = require('./server')
 const DEFAULT_NAME = 'index.html'
 
+let isVerbose = !!argv.verbose
+let htmlOrDir
 let cwd = process.cwd()
-let htmlOrDir = argv._
-let indexHtml = ''
+let rawHtmlOrDir = argv._
+let indexHtmlPath = ''
+let baseDir
+let notExistPath
 
-if (!htmlOrDir || !htmlOrDir.length) {
+if (!rawHtmlOrDir || !rawHtmlOrDir.length) {
     htmlOrDir = cwd
-    indexHtml = resolve(cwd, 'index.html')
+    baseDir = '/'
+    indexHtmlPath = resolve(cwd, 'index.html')
 } else {
-    htmlOrDir = resolve(cwd, htmlOrDir[0])
+    htmlOrDir = resolve(cwd, rawHtmlOrDir[0])
+    baseDir = rawHtmlOrDir[0].split('/')[0]
 }
 
 try {
-    if (!indexHtml) {
+    if (!indexHtmlPath) {
         if (htmlOrDir.endsWith('.html')) {
-            indexHtml = htmlOrDir
+            indexHtmlPath = htmlOrDir
         } else {
+            notExistPath = htmlOrDir
             let stats = fs.statSync(htmlOrDir)
 
             if (stats.isDirectory()) {
-                indexHtml = resolve(htmlOrDir, DEFAULT_NAME)
+                indexHtmlPath = resolve(htmlOrDir, DEFAULT_NAME)
             } else {
-                indexHtml = htmlOrDir
+                indexHtmlPath = htmlOrDir
             }
         }
     }
 
-    fs.statSync(indexHtml)
-    Server(indexHtml)
+    notExistPath = indexHtmlPath
+    fs.statSync(indexHtmlPath)
+    new Server({
+        baseDir,
+        indexHtmlPath,
+        indexHtmlUrl: relative(resolve(cwd, baseDir), indexHtmlPath),
+        isVerbose
+    })
 } catch (e) {
-    console.error(e)
+    console.error(`path ${chalk.redBright(notExistPath)} does not exist.`)
 }
