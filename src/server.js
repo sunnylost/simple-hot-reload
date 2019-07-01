@@ -7,22 +7,54 @@ const chokidar = require('chokidar')
 const chalk = require('chalk')
 
 let wss
+let wssPort
 let sender
 let indexFilePath
+let externalAssets = []
+let curBaseDir
 let clientName = `client.${+new Date()}.js`
 
-function watchChange(dir, isVerbose) {
-    let watcher = chokidar.watch(dir)
+function watchChange(isVerbose) {
+    let watcher = chokidar.watch(curBaseDir)
 
     watcher.on('change', path => {
         if (isVerbose) {
             console.log(chalk.green(path), 'has changed.')
         }
 
-        if (indexFilePath.endsWith(path)) {
+        let flag = externalAssets.some(v => {
+            if (v.endsWith(path)) {
+                sender && sender.send('reload')
+                return true
+            }
+        })
+
+        if (!flag && indexFilePath.endsWith(path)) {
             sender && sender.send('reload')
         }
     })
+}
+
+function collectExternalAssets(data) {
+    if (!data) {
+        return
+    }
+
+    try {
+        let assets = JSON.parse(data)
+        externalAssets.length = 0
+
+        Array.isArray(assets) &&
+            assets.forEach(v => {
+                let matches = v.match(/^http:\/\/[^:]+:\d+\/(.+)/)
+
+                if (matches && matches.length > 1) {
+                    externalAssets.push(path.resolve(curBaseDir, matches[1]))
+                }
+            })
+    } catch (e) {
+        //do nothing
+    }
 }
 
 function getAvailablePort(callback, port = 8080, failedTimes = 10) {
@@ -50,10 +82,21 @@ function getAvailablePort(callback, port = 8080, failedTimes = 10) {
     tmpServer.listen(port)
 }
 
-module.exports = function(filePath) {
+function createWebsocketServer(port) {
     getAvailablePort(port => {
-        init(port, filePath)
-    })
+        wssPort = port
+        wss = new WebSocket.Server({
+            port
+        })
+
+        wss.on('connection', ws => {
+            sender = ws
+
+            ws.on('message', data => {
+                collectExternalAssets(data)
+            })
+        })
+    }, port + 1)
 }
 
 class Server {
@@ -66,13 +109,14 @@ class Server {
         )
 
         getAvailablePort(port => {
-            this.init(port)
+            this.create(port)
         })
     }
 
-    init(port) {
+    create(port) {
         let { baseDir, indexHtmlPath, indexHtmlUrl, isVerbose } = this.opts
 
+        curBaseDir = baseDir
         indexFilePath = indexHtmlPath
 
         let server = new http.createServer((req, res) => {
@@ -98,7 +142,7 @@ class Server {
                 })
                 stream.on('end', () => {
                     if (requestFile === indexHtmlPath) {
-                        res.end(`<script src="/${clientName}"></script>`)
+                        res.end(`<script src="/${clientName}" data-port="${wssPort}"></script>`)
                     }
                 })
                 stream.pipe(res)
@@ -107,23 +151,14 @@ class Server {
                     console.log('serve file ' + chalk.green(url))
                 }
             } catch (e) {
-                res.writeHead(404).end()
+                res.writeHead(404)
+                res.end()
             }
         })
 
         server.on('listening', () => {
-            watchChange(baseDir, isVerbose)
-
-            getAvailablePort(port => {
-                wss = new WebSocket.Server({
-                    port
-                })
-
-                wss.on('connection', ws => {
-                    sender = ws
-                })
-            }, port + 1)
-
+            watchChange(isVerbose)
+            createWebsocketServer(port)
             // open(`http://localhost:${port}/${indexHtmlUrl}`)
         })
 
