@@ -10,16 +10,14 @@ let htmlOrDir
 let cwd = process.cwd()
 let rawHtmlOrDir = argv._
 let indexHtmlPath = ''
-let baseDir
+let baseDir = cwd
 let notExistPath
 
 if (!rawHtmlOrDir || !rawHtmlOrDir.length) {
     htmlOrDir = cwd
-    baseDir = '/'
     indexHtmlPath = resolve(cwd, 'index.html')
 } else {
     htmlOrDir = resolve(cwd, rawHtmlOrDir[0])
-    baseDir = rawHtmlOrDir[0].split('/')[0]
 }
 
 try {
@@ -43,7 +41,7 @@ try {
     new Server({
         baseDir,
         indexHtmlPath,
-        indexHtmlUrl: relative(resolve(cwd, baseDir), indexHtmlPath),
+        indexHtmlUrl: relative(cwd, indexHtmlPath),
         isVerbose
     })
 } catch (e) {
