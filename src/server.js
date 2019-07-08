@@ -2,10 +2,12 @@ const path = require('path')
 const http = require('http')
 const fs = require('fs')
 const open = require('open')
+const url = require('url')
 const WebSocket = require('ws')
 const chokidar = require('chokidar')
 const chalk = require('chalk')
 
+let serverPort
 let wss
 let wssPort
 let sender
@@ -13,6 +15,14 @@ let indexFilePath
 let externalAssets = []
 let curBaseDir
 let clientName = `client.${+new Date()}.js`
+
+function send(msg) {
+    if (!sender) {
+        return
+    }
+
+    sender.send(msg)
+}
 
 function watchChange(isVerbose) {
     let watcher = chokidar.watch(curBaseDir)
@@ -22,15 +32,26 @@ function watchChange(isVerbose) {
             console.log(chalk.green(path), 'has changed.')
         }
 
+        let shouldReload = false
+
         let flag = externalAssets.some(v => {
-            if (v.endsWith(path)) {
-                sender && sender.send('reload')
+            if (path.endsWith(v)) {
+                if (v.endsWith('.css')) {
+                    send(v)
+                } else {
+                    shouldReload = true
+                }
                 return true
             }
         })
 
+        // index html change
         if (!flag && indexFilePath.endsWith(path)) {
-            sender && sender.send('reload')
+            shouldReload = true
+        }
+
+        if (shouldReload) {
+            send('reload')
         }
     })
 }
@@ -46,11 +67,12 @@ function collectExternalAssets(data) {
 
         Array.isArray(assets) &&
             assets.forEach(v => {
-                let matches = v.match(/^http:\/\/[^:]+:\d+\/(.+)/)
+                let _url = url.parse(v)
 
-                if (matches && matches.length > 1) {
-                    externalAssets.push(path.resolve(curBaseDir, matches[1]))
+                if (_url.host !== `localhost:${serverPort}`) {
+                    return
                 }
+                externalAssets.push(_url.pathname)
             })
     } catch (e) {
         //do nothing
@@ -64,11 +86,12 @@ function getAvailablePort(callback, port = 8080, failedTimes = 10) {
         if (err && err.code === 'EADDRINUSE') {
             if (failedTimes) {
                 process.nextTick(() => {
-                    tmpServer = null
                     getAvailablePort(callback, port + 1, failedTimes - 1)
                 })
             }
         }
+
+        tmpServer = null
     })
 
     tmpServer.on('listening', () => {
@@ -76,7 +99,9 @@ function getAvailablePort(callback, port = 8080, failedTimes = 10) {
     })
 
     tmpServer.on('close', () => {
-        callback(port)
+        process.nextTick(() => {
+            callback(port)
+        })
     })
 
     tmpServer.listen(port)
@@ -114,24 +139,29 @@ class Server {
     }
 
     create(port) {
+        serverPort = port
         let { baseDir, indexHtmlPath, indexHtmlUrl, isVerbose } = this.opts
 
         curBaseDir = baseDir
         indexFilePath = indexHtmlPath
 
         let server = new http.createServer((req, res) => {
-            let url = req.url
+            let _url = req.url
 
-            if (url[0] === '/') {
-                url = url.substring(1)
+            if (_url[0] === '/') {
+                _url = _url.substring(1)
             }
 
-            let requestFile
+            _url = url.parse(_url)
 
-            if (url === clientName) {
+            let requestFile
+            let isClient = false
+
+            if (_url.pathname === clientName) {
+                isClient = true
                 requestFile = path.resolve(__dirname, './client.js')
             } else {
-                requestFile = path.resolve(baseDir, url)
+                requestFile = path.resolve(baseDir, _url.pathname)
             }
 
             try {
@@ -147,8 +177,8 @@ class Server {
                 })
                 stream.pipe(res)
 
-                if (isVerbose) {
-                    console.log('serve file ' + chalk.green(url))
+                if (isVerbose && !isClient) {
+                    console.log('serve file ' + chalk.green(_url))
                 }
             } catch (e) {
                 res.writeHead(404)
@@ -158,8 +188,9 @@ class Server {
 
         server.on('listening', () => {
             watchChange(isVerbose)
-            createWebsocketServer(port)
-            // open(`http://localhost:${port}/${indexHtmlUrl}`)
+            createWebsocketServer(serverPort)
+            // open(`http://localhost:${serverPort}/${indexHtmlUrl}`)
+            console.log(`http://localhost:${serverPort}/${indexHtmlUrl}`)
         })
 
         server.on('error', err => {
@@ -170,7 +201,14 @@ class Server {
             wss && wss.close()
         })
 
-        server.listen(port)
+        server.listen(serverPort)
+
+        this.server = server
+    }
+
+    clean() {
+        wss && wss.close()
+        this.server.close()
     }
 }
 

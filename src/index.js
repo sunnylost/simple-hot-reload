@@ -38,12 +38,20 @@ try {
 
     notExistPath = indexHtmlPath
     fs.statSync(indexHtmlPath)
-    new Server({
+
+    let server = new Server({
         baseDir,
         indexHtmlPath,
         indexHtmlUrl: relative(cwd, indexHtmlPath),
         isVerbose
     })
+
+    let cleanHandler = () => {
+        server.clean()
+    }
+
+    process.on('beforeExit', cleanHandler)
+    process.on('uncaughtException', cleanHandler)
 } catch (e) {
     console.error(`path ${chalk.redBright(notExistPath)} does not exist.`)
 }
