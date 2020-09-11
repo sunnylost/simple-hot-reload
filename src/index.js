@@ -2,7 +2,7 @@ const { resolve, relative } = require('path')
 const fs = require('fs')
 const chalk = require('chalk')
 const argv = require('yargs').argv
-const Server = require('./server')
+const Server = require('./server/server')
 const DEFAULT_NAME = 'index.html'
 
 let isVerbose = !!argv.verbose

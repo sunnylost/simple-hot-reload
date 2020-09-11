@@ -1,4 +1,4 @@
-;(function() {
+;(function () {
     let thisScript = document.currentScript
     let dummyLink = document.createElement('a')
     let ws = new WebSocket(`ws://localhost:${thisScript.dataset.port}`)

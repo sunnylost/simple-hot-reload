@@ -1,11 +1,16 @@
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
-const open = require('open')
 const url = require('url')
 const WebSocket = require('ws')
 const chokidar = require('chokidar')
 const chalk = require('chalk')
+
+const MIME_MAP = {
+    js: 'text/javascript',
+    html: 'text/html',
+    css: 'text/css'
+}
 
 let serverPort
 let wss
@@ -15,6 +20,10 @@ let indexFilePath
 let externalAssets = []
 let curBaseDir
 let clientName = `client.${+new Date()}.js`
+
+function link(text, url) {
+    return `\u001B]8;;${url}\u0007${chalk.green(text)}\u001B]8;;\u0007`
+}
 
 function send(msg) {
     if (!sender) {
@@ -27,14 +36,14 @@ function send(msg) {
 function watchChange(isVerbose) {
     let watcher = chokidar.watch(curBaseDir)
 
-    watcher.on('change', path => {
+    watcher.on('change', (path) => {
         if (isVerbose) {
             console.log(chalk.green(path), 'has changed.')
         }
 
         let shouldReload = false
 
-        let flag = externalAssets.some(v => {
+        let flag = externalAssets.some((v) => {
             if (path.endsWith(v)) {
                 if (v.endsWith('.css')) {
                     send(v)
@@ -66,7 +75,7 @@ function collectExternalAssets(data) {
         externalAssets.length = 0
 
         Array.isArray(assets) &&
-            assets.forEach(v => {
+            assets.forEach((v) => {
                 let _url = url.parse(v)
 
                 if (_url.host !== `localhost:${serverPort}`) {
@@ -82,7 +91,7 @@ function collectExternalAssets(data) {
 function getAvailablePort(callback, port = 8080, failedTimes = 10) {
     let tmpServer = new http.createServer()
 
-    tmpServer.on('error', err => {
+    tmpServer.on('error', (err) => {
         if (err && err.code === 'EADDRINUSE') {
             if (failedTimes) {
                 process.nextTick(() => {
@@ -108,16 +117,16 @@ function getAvailablePort(callback, port = 8080, failedTimes = 10) {
 }
 
 function createWebsocketServer(port) {
-    getAvailablePort(port => {
+    getAvailablePort((port) => {
         wssPort = port
         wss = new WebSocket.Server({
             port
         })
 
-        wss.on('connection', ws => {
+        wss.on('connection', (ws) => {
             sender = ws
 
-            ws.on('message', data => {
+            ws.on('message', (data) => {
                 collectExternalAssets(data)
             })
         })
@@ -133,7 +142,7 @@ class Server {
             opts
         )
 
-        getAvailablePort(port => {
+        getAvailablePort((port) => {
             this.create(port)
         })
     }
@@ -159,10 +168,12 @@ class Server {
 
             if (_url.pathname === clientName) {
                 isClient = true
-                requestFile = path.resolve(__dirname, './client.js')
+                requestFile = path.resolve(__dirname, '../client/client.js')
             } else {
                 requestFile = path.resolve(baseDir, _url.pathname)
             }
+
+            let fileExt = requestFile.match(/\.[^.]+$/)
 
             try {
                 let stream = fs.createReadStream(requestFile)
@@ -175,10 +186,15 @@ class Server {
                         res.end(`<script src="/${clientName}" data-port="${wssPort}"></script>`)
                     }
                 })
+
+                if (fileExt) {
+                    let mime = MIME_MAP[fileExt[0].substring(1)]
+                    mime && res.setHeader('Content-Type', mime)
+                }
                 stream.pipe(res)
 
                 if (isVerbose && !isClient) {
-                    console.log('serve file ' + chalk.green(_url))
+                    console.log('serve file ' + chalk.green(_url.href))
                 }
             } catch (e) {
                 res.writeHead(404)
@@ -189,11 +205,11 @@ class Server {
         server.on('listening', () => {
             watchChange(isVerbose)
             createWebsocketServer(serverPort)
-            // open(`http://localhost:${serverPort}/${indexHtmlUrl}`)
-            console.log(`http://localhost:${serverPort}/${indexHtmlUrl}`)
+            let url = `http://localhost:${serverPort}/${indexHtmlUrl}`
+            console.log(link(url, url))
         })
 
-        server.on('error', err => {
+        server.on('error', (err) => {
             console.log(err)
         })
 
