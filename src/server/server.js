@@ -1,4 +1,5 @@
 const path = require('path')
+const net = require('net')
 const http = require('http')
 const fs = require('fs')
 const url = require('url')
@@ -89,31 +90,39 @@ function collectExternalAssets(data) {
 }
 
 function getAvailablePort(callback, port = 8080, failedTimes = 10) {
-    let tmpServer = new http.createServer()
+    let tmpServer = net.createServer()
+    let isFailed = false
 
     tmpServer.on('error', err => {
         if (err && err.code === 'EADDRINUSE') {
+            isFailed = true
+
             if (failedTimes) {
                 process.nextTick(() => {
                     getAvailablePort(callback, port + 1, failedTimes - 1)
                 })
+            } else {
+                console.error('Cannot find available port.')
             }
         }
 
+        tmpServer.close()
         tmpServer = null
     })
 
     tmpServer.on('listening', () => {
-        tmpServer.close()
+        process.nextTick(() => {
+            tmpServer.close()
+        })
     })
 
     tmpServer.on('close', () => {
         process.nextTick(() => {
-            callback(port)
+            !isFailed && callback(port)
         })
     })
 
-    tmpServer.listen(port)
+    tmpServer.listen(port, '0.0.0.0')
 }
 
 function createWebsocketServer(port) {
